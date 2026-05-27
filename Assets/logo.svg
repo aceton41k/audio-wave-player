@@ -1,0 +1,54 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="orb" cx="34%" cy="22%" r="86%">
+      <stop offset="0%" stop-color="#FFF8E8"/>
+      <stop offset="28%" stop-color="#FFC95E"/>
+      <stop offset="62%" stop-color="#F36F22"/>
+      <stop offset="100%" stop-color="#8E2B05"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="120" y1="95" x2="295" y2="265">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.96"/>
+      <stop offset="72%" stop-color="#FFFFFF" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="button" x1="215" y1="196" x2="306" y2="318">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F2EEE8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="22" flood-color="#321900" flood-opacity="0.48"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="none"/>
+  <circle cx="256" cy="256" r="211" fill="url(#orb)" filter="url(#shadow)"/>
+  <circle cx="256" cy="256" r="211" stroke="#FFFFFF" stroke-width="44"/>
+  <circle cx="256" cy="256" r="176" stroke="#FFFFFF" stroke-opacity="0.34" stroke-width="5"/>
+
+  <ellipse cx="202" cy="143" rx="142" ry="70" fill="url(#glass)" transform="rotate(-18 202 143)"/>
+  <circle cx="372" cy="112" r="29" fill="#FFFFFF" fill-opacity="0.42"/>
+  <circle cx="404" cy="154" r="14" fill="#FFFFFF" fill-opacity="0.72"/>
+  <circle cx="134" cy="348" r="24" fill="#FFD27A" fill-opacity="0.48"/>
+
+  <path d="M88 276 C126 240 154 240 192 276 C230 312 258 312 296 276 C334 240 362 240 424 276" stroke="#FFFFFF" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M88 304 C126 268 154 268 192 304 C230 340 258 340 296 304 C334 268 362 268 424 304" stroke="#FFFFFF" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M88 292 C126 256 154 256 192 292 C230 328 258 328 296 292 C334 256 362 256 424 292" stroke="#F6A03D" stroke-opacity="0.28" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M139 192 V154" stroke="#FFE6A6" stroke-width="14" stroke-linecap="round"/>
+  <path d="M180 190 V134" stroke="#F6B844" stroke-width="14" stroke-linecap="round"/>
+  <path d="M221 198 V158" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
+  <path d="M331 190 V154" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" opacity="0.92"/>
+
+  <circle cx="256" cy="256" r="77" fill="#783300" fill-opacity="0.24"/>
+  <circle cx="256" cy="256" r="66" fill="url(#button)" opacity="0.96"/>
+  <circle cx="256" cy="256" r="66" stroke="#FFFFFF" stroke-width="5"/>
+  <path d="M235 214 C235 206 244 202 251 206 L316 246 C326 252 326 263 316 269 L251 306 C244 310 235 306 235 298 V214Z" fill="#E25D34"/>
+  <path d="M248 226 L297 256 L248 286 V226Z" fill="#F5A45B" fill-opacity="0.72"/>
+
+  <path d="M116 386 C184 430 300 438 389 359" stroke="#FFFFFF" stroke-opacity="0.33" stroke-width="12" stroke-linecap="round"/>
+  <path d="M121 398 C190 438 296 444 372 386" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="7" stroke-linecap="round"/>
+  <path d="M358 67 L371 104 L408 117 L371 130 L358 167 L345 130 L308 117 L345 104 Z" fill="#FFFFFF" opacity="0.88"/>
+</svg>
