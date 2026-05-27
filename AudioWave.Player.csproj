@@ -7,10 +7,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AudioWavePlayer</AssemblyName>
     <RootNamespace>AudioWavePlayer</RootNamespace>
-    <ApplicationIcon></ApplicationIcon>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\AppIcon.ico" />
+    <None Include="Assets\logo.svg" />
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 </Project>

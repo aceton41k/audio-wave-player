@@ -8,11 +8,13 @@ namespace AudioWavePlayer.Controls;
 
 public sealed class WaveformControl : FrameworkElement
 {
+    private const double MinChannelHeight = 96;
     private RenderTargetBitmap? _baseBitmap;
     private RenderTargetBitmap? _playedBitmap;
     private Size _bitmapSize;
     private bool _bitmapTheme;
     private float[]? _bitmapPeaks;
+    private int _bitmapChannelCount;
     private double _hoverProgress;
     private bool _isHovering;
     private bool _isPointerDown;
@@ -38,6 +40,10 @@ public sealed class WaveformControl : FrameworkElement
         DependencyProperty.Register(nameof(Progress), typeof(double), typeof(WaveformControl),
             new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    public static readonly DependencyProperty ChannelCountProperty =
+        DependencyProperty.Register(nameof(ChannelCount), typeof(int), typeof(WaveformControl),
+            new FrameworkPropertyMetadata(1, FrameworkPropertyMetadataOptions.AffectsRender, OnChannelCountChanged));
+
     public static readonly DependencyProperty IsDarkThemeProperty =
         DependencyProperty.Register(nameof(IsDarkTheme), typeof(bool), typeof(WaveformControl),
             new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender, OnThemeChanged));
@@ -60,6 +66,12 @@ public sealed class WaveformControl : FrameworkElement
     {
         get => (double)GetValue(ProgressProperty);
         set => SetValue(ProgressProperty, Math.Clamp(value, 0, 1));
+    }
+
+    public int ChannelCount
+    {
+        get => (int)GetValue(ChannelCountProperty);
+        set => SetValue(ChannelCountProperty, Math.Max(1, value));
     }
 
     public bool IsDarkTheme
@@ -157,6 +169,7 @@ public sealed class WaveformControl : FrameworkElement
             _playedBitmap is not null &&
             _bitmapSize == currentSize &&
             _bitmapTheme == IsDarkTheme &&
+            _bitmapChannelCount == ChannelCount &&
             ReferenceEquals(_bitmapPeaks, Peaks))
         {
             return;
@@ -164,6 +177,7 @@ public sealed class WaveformControl : FrameworkElement
 
         _bitmapSize = currentSize;
         _bitmapTheme = IsDarkTheme;
+        _bitmapChannelCount = ChannelCount;
         _bitmapPeaks = Peaks;
         _baseBitmap = RenderWaveBitmap(currentSize, IsDarkTheme ? _darkWave : _lightWave);
         _playedBitmap = RenderWaveBitmap(currentSize, IsDarkTheme ? _darkPlayed : _lightPlayed);
@@ -192,42 +206,76 @@ public sealed class WaveformControl : FrameworkElement
 
     private void DrawWaveColumns(DrawingContext drawingContext, Rect rect, Brush waveBrush)
     {
-        var points = Peaks.Length / 2;
-        var centerY = Math.Round(rect.Height / 2);
-        var amplitude = rect.Height * 0.47;
-        var width = Math.Max(1, (int)Math.Round(rect.Width));
-        var tops = new double[width];
-        var bottoms = new double[width];
-
-        for (var x = 0; x < width; x++)
+        var channelCount = GetVisibleChannelCount(rect);
+        var storedChannels = Math.Max(1, ChannelCount);
+        var valuesPerPoint = storedChannels * 2;
+        if (Peaks.Length < valuesPerPoint)
         {
-            var startIndex = (int)Math.Floor(x * points / rect.Width);
-            var endIndex = (int)Math.Ceiling((x + 1) * points / rect.Width);
-            startIndex = Math.Clamp(startIndex, 0, points - 1);
-            endIndex = Math.Clamp(endIndex, startIndex + 1, points);
+            return;
+        }
 
-            var min = 0f;
-            var max = 0f;
-            for (var i = startIndex; i < endIndex; i++)
+        var points = Peaks.Length / valuesPerPoint;
+        var width = Math.Max(1, (int)Math.Round(rect.Width));
+
+        for (var channel = 0; channel < channelCount; channel++)
+        {
+            var channelRect = GetChannelRect(rect, channel, channelCount);
+            var centerY = Math.Round(channelRect.Top + channelRect.Height / 2);
+            var amplitude = channelRect.Height * 0.44;
+            var tops = new double[width];
+            var bottoms = new double[width];
+
+            for (var x = 0; x < width; x++)
             {
-                min = Math.Min(min, Peaks[i * 2]);
-                max = Math.Max(max, Peaks[i * 2 + 1]);
+                var startIndex = (int)Math.Floor(x * points / rect.Width);
+                var endIndex = (int)Math.Ceiling((x + 1) * points / rect.Width);
+                startIndex = Math.Clamp(startIndex, 0, points - 1);
+                endIndex = Math.Clamp(endIndex, startIndex + 1, points);
+
+                var min = 0f;
+                var max = 0f;
+                for (var i = startIndex; i < endIndex; i++)
+                {
+                    var offset = i * valuesPerPoint + channel * 2;
+                    min = Math.Min(min, Peaks[offset]);
+                    max = Math.Max(max, Peaks[offset + 1]);
+                }
+
+                tops[x] = centerY - max * amplitude;
+                bottoms[x] = centerY - min * amplitude;
             }
 
-            tops[x] = centerY - max * amplitude;
-            bottoms[x] = centerY - min * amplitude;
+            SmoothEnvelope(tops);
+            SmoothEnvelope(bottoms);
+
+            for (var x = 0; x < width; x++)
+            {
+                var top = Math.Round(tops[x]);
+                var bottom = Math.Round(bottoms[x]);
+                var height = Math.Max(1, bottom - top);
+                drawingContext.DrawRectangle(waveBrush, null, new Rect(x, top, 1, height));
+            }
         }
+    }
 
-        SmoothEnvelope(tops);
-        SmoothEnvelope(bottoms);
+    private int GetVisibleChannelCount(Rect rect)
+    {
+        var channelCount = Math.Max(1, ChannelCount);
+        return channelCount > 1 && rect.Height / channelCount < MinChannelHeight
+            ? 1
+            : channelCount;
+    }
 
-        for (var x = 0; x < width; x++)
+    private static Rect GetChannelRect(Rect rect, int channel, int channelCount)
+    {
+        if (channelCount <= 1)
         {
-            var top = Math.Round(tops[x]);
-            var bottom = Math.Round(bottoms[x]);
-            var height = Math.Max(1, bottom - top);
-            drawingContext.DrawRectangle(waveBrush, null, new Rect(x, top, 1, height));
+            return rect;
         }
+
+        var gap = 5d;
+        var channelHeight = (rect.Height - gap * (channelCount - 1)) / channelCount;
+        return new Rect(rect.Left, rect.Top + channel * (channelHeight + gap), rect.Width, channelHeight);
     }
 
     private static void SmoothEnvelope(double[] values)
@@ -263,8 +311,19 @@ public sealed class WaveformControl : FrameworkElement
             drawingContext.DrawLine(gridPen, new Point(x, 0), new Point(x, rect.Height));
         }
 
-        var centerY = Math.Round(rect.Height / 2) + 0.5;
-        drawingContext.DrawLine(gridPen, new Point(0, centerY), new Point(rect.Width, centerY));
+        var channelCount = GetVisibleChannelCount(rect);
+        for (var channel = 0; channel < channelCount; channel++)
+        {
+            var channelRect = GetChannelRect(rect, channel, channelCount);
+            var centerY = Math.Round(channelRect.Top + channelRect.Height / 2) + 0.5;
+            drawingContext.DrawLine(gridPen, new Point(0, centerY), new Point(rect.Width, centerY));
+        }
+
+        for (var channel = 1; channel < channelCount; channel++)
+        {
+            var y = Math.Round(rect.Height * channel / channelCount) + 0.5;
+            drawingContext.DrawLine(gridPen, new Point(0, y), new Point(rect.Width, y));
+        }
     }
 
     private void DrawSeeker(DrawingContext drawingContext, Rect rect, double progress, Brush brush, bool labelBelow)
@@ -386,11 +445,18 @@ public sealed class WaveformControl : FrameworkElement
         control.ClearRenderCache();
     }
 
+    private static void OnChannelCountChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs eventArgs)
+    {
+        var control = (WaveformControl)dependencyObject;
+        control.ClearRenderCache();
+    }
+
     private void ClearRenderCache()
     {
         _baseBitmap = null;
         _playedBitmap = null;
         _bitmapPeaks = null;
+        _bitmapChannelCount = 0;
     }
 
     private static string FormatTime(TimeSpan value) => $"{(int)value.TotalMinutes}:{value.Seconds:00}.{value.Milliseconds:000}";

@@ -9,9 +9,12 @@ namespace AudioWavePlayer.Services;
 public sealed class FfmpegService
 {
     private static readonly string[] SupportedExtensions = [".wav", ".mp3", ".m4a", ".flac", ".ogg"];
-    private const string DecodeCacheVersion = "pcm-s16le-44100-stereo-v3";
-    private const string WaveformCacheVersion = "waveform-rms-v1";
+    private const string DecodeCacheVersion = "pcm-s16le-44100-source-channels-v4";
+    private const string WaveformCacheVersion = "waveform-channels-rms-fast-v3";
     private const int WaveformCacheMagic = 0x46574150;
+    private const int WaveformPeakPoints = 8000;
+    private const int WaveformRmsPoints = 12000;
+    private const int MaxWaveformSampleFrames = 1_200_000;
     private readonly string _ffmpegPath;
 
     public FfmpegService()
@@ -43,7 +46,7 @@ public sealed class FfmpegService
 
         var result = await RunAsync(
             _ffmpegPath,
-            ["-hide_banner", "-y", "-i", sourcePath, "-vn", "-map_metadata", "-1", "-ac", "2", "-ar", "44100", "-acodec", "pcm_s16le", "-f", "wav", outputPath],
+            ["-hide_banner", "-y", "-i", sourcePath, "-vn", "-map_metadata", "-1", "-ar", "44100", "-acodec", "pcm_s16le", "-f", "wav", outputPath],
             cancellationToken);
         if (result.ExitCode != 0 || !File.Exists(outputPath))
         {
@@ -143,13 +146,168 @@ public sealed class FfmpegService
             return cached;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        var peaks = BuildWaveformPeaks(decodedWavPath);
-        cancellationToken.ThrowIfCancellationRequested();
-        var rmsLevels = BuildRmsLevels(decodedWavPath);
-        var data = new WaveformCacheData(peaks, rmsLevels);
+        var data = BuildWaveformData(decodedWavPath, cancellationToken);
         WriteWaveformCache(cachePath, data);
         return data;
+    }
+
+    public WaveformCacheData BuildWaveformData(string decodedWavPath, CancellationToken cancellationToken)
+    {
+        using var reader = new WaveFileReader(decodedWavPath);
+        EnsureSupportedWaveformFormat(reader.WaveFormat);
+
+        var sourceChannels = reader.WaveFormat.Channels;
+        var rmsChannels = Math.Min(2, sourceChannels);
+        var bytesPerSample = reader.WaveFormat.BitsPerSample / 8;
+        var totalFrames = reader.Length / reader.BlockAlign;
+        var peakFramesPerPoint = Math.Max(1, totalFrames / WaveformPeakPoints);
+        var rmsFramesPerPoint = Math.Max(1, totalFrames / WaveformRmsPoints);
+        var sampleStride = GetWaveformSampleStride(totalFrames, peakFramesPerPoint, rmsFramesPerPoint);
+        var buffer = new byte[Math.Min(reader.BlockAlign * 16_384, 1024 * 256)];
+        var peaks = new List<float>((int)Math.Min(WaveformPeakPoints, totalFrames) * sourceChannels * 2);
+        var rmsLevels = new List<float>((int)Math.Min(WaveformRmsPoints, totalFrames) * 2);
+
+        long globalFrame = 0;
+        long nextSampleFrame = 0;
+        long peakBucket = -1;
+        long rmsBucket = -1;
+        var peakMins = new float[sourceChannels];
+        var peakMaxes = new float[sourceChannels];
+        var rmsSums = new double[2];
+        long rmsSamples = 0;
+
+        int read;
+        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var framesRead = read / reader.BlockAlign;
+            for (var frame = 0; frame < framesRead; frame++, globalFrame++)
+            {
+                if (globalFrame < nextSampleFrame)
+                {
+                    continue;
+                }
+
+                nextSampleFrame = globalFrame + sampleStride;
+                var leftSample = 0f;
+                var rightSample = 0f;
+                for (var channel = 0; channel < sourceChannels; channel++)
+                {
+                    var offset = frame * reader.BlockAlign + channel * bytesPerSample;
+                    var sample = ReadSample(buffer, offset, reader.WaveFormat);
+                    if (channel == 0)
+                    {
+                        leftSample = sample;
+                    }
+                    else if (channel == 1 && rmsChannels > 1)
+                    {
+                        rightSample = sample;
+                    }
+                }
+
+                if (sourceChannels == 1)
+                {
+                    rightSample = leftSample;
+                }
+
+                var currentPeakBucket = globalFrame / peakFramesPerPoint;
+                if (currentPeakBucket != peakBucket)
+                {
+                    if (peakBucket >= 0)
+                    {
+                        AddPeakBucket(peaks, peakMins, peakMaxes);
+                    }
+
+                    peakBucket = currentPeakBucket;
+                    ReadFramePeaks(buffer, frame, reader.BlockAlign, bytesPerSample, reader.WaveFormat, peakMins, peakMaxes);
+                }
+                else
+                {
+                    AccumulateFramePeaks(buffer, frame, reader.BlockAlign, bytesPerSample, reader.WaveFormat, peakMins, peakMaxes);
+                }
+
+                var currentRmsBucket = globalFrame / rmsFramesPerPoint;
+                if (currentRmsBucket != rmsBucket)
+                {
+                    if (rmsBucket >= 0 && rmsSamples > 0)
+                    {
+                        AddRmsLevel(rmsLevels, rmsSums, rmsSamples);
+                    }
+
+                    rmsBucket = currentRmsBucket;
+                    Array.Clear(rmsSums);
+                    rmsSamples = 0;
+                }
+
+                rmsSums[0] += leftSample * leftSample;
+                rmsSums[1] += rightSample * rightSample;
+                rmsSamples++;
+            }
+        }
+
+        if (peakBucket >= 0)
+        {
+            AddPeakBucket(peaks, peakMins, peakMaxes);
+        }
+
+        if (rmsSamples > 0)
+        {
+            AddRmsLevel(rmsLevels, rmsSums, rmsSamples);
+        }
+
+        return new WaveformCacheData(peaks.ToArray(), sourceChannels, rmsLevels.ToArray());
+    }
+
+    private static void ReadFramePeaks(
+        byte[] buffer,
+        int frame,
+        int blockAlign,
+        int bytesPerSample,
+        WaveFormat format,
+        float[] mins,
+        float[] maxes)
+    {
+        for (var channel = 0; channel < mins.Length; channel++)
+        {
+            var offset = frame * blockAlign + channel * bytesPerSample;
+            var sample = ReadSample(buffer, offset, format);
+            mins[channel] = sample;
+            maxes[channel] = sample;
+        }
+    }
+
+    private static void AccumulateFramePeaks(
+        byte[] buffer,
+        int frame,
+        int blockAlign,
+        int bytesPerSample,
+        WaveFormat format,
+        float[] mins,
+        float[] maxes)
+    {
+        for (var channel = 0; channel < mins.Length; channel++)
+        {
+            var offset = frame * blockAlign + channel * bytesPerSample;
+            var sample = ReadSample(buffer, offset, format);
+            mins[channel] = Math.Min(mins[channel], sample);
+            maxes[channel] = Math.Max(maxes[channel], sample);
+        }
+    }
+
+    private static void AddPeakBucket(List<float> peaks, float[] mins, float[] maxes)
+    {
+        for (var channel = 0; channel < mins.Length; channel++)
+        {
+            peaks.Add(mins[channel]);
+            peaks.Add(maxes[channel]);
+        }
+    }
+
+    private static long GetWaveformSampleStride(long totalFrames, long peakFramesPerPoint, long rmsFramesPerPoint)
+    {
+        var stride = Math.Max(1, totalFrames / MaxWaveformSampleFrames);
+        var bucketLimit = Math.Max(1, Math.Min(peakFramesPerPoint, rmsFramesPerPoint) / 2);
+        return Math.Clamp(stride, 1, bucketLimit);
     }
 
     public float[] BuildRmsLevels(string decodedWavPath, int targetPoints = 48000)
@@ -265,7 +423,7 @@ public sealed class FfmpegService
 
     private static bool TryReadWaveformCache(string cachePath, out WaveformCacheData data)
     {
-        data = new WaveformCacheData([], []);
+        data = new WaveformCacheData([], 1, []);
         try
         {
             if (!File.Exists(cachePath))
@@ -286,10 +444,16 @@ public sealed class FfmpegService
                 return false;
             }
 
+            var peakChannels = reader.ReadInt32();
+            if (peakChannels <= 0 || peakChannels > 64)
+            {
+                return false;
+            }
+
             var peaks = ReadFloatArray(reader);
             var rmsLevels = ReadFloatArray(reader);
-            data = new WaveformCacheData(peaks, rmsLevels);
-            return peaks.Length > 0 && rmsLevels.Length > 0;
+            data = new WaveformCacheData(peaks, peakChannels, rmsLevels);
+            return peaks.Length > 0 && peaks.Length % (peakChannels * 2) == 0 && rmsLevels.Length > 0;
         }
         catch
         {
@@ -306,6 +470,7 @@ public sealed class FfmpegService
             using var writer = new BinaryWriter(stream);
             writer.Write(WaveformCacheMagic);
             writer.Write(WaveformCacheVersion);
+            writer.Write(data.PeakChannels);
             WriteFloatArray(writer, data.Peaks);
             WriteFloatArray(writer, data.RmsLevels);
         }
@@ -348,7 +513,7 @@ public sealed class FfmpegService
             using var reader = new WaveFileReader(path);
             return reader.WaveFormat.Encoding == WaveFormatEncoding.Pcm &&
                    reader.WaveFormat.BitsPerSample == 16 &&
-                   reader.WaveFormat.Channels == 2 &&
+                   reader.WaveFormat.Channels > 0 &&
                    reader.WaveFormat.SampleRate == 44100;
         }
         catch
@@ -560,5 +725,5 @@ public sealed class FfmpegService
 
     private sealed record ProcessResult(int ExitCode, string Output, string Error);
 
-    public sealed record WaveformCacheData(float[] Peaks, float[] RmsLevels);
+    public sealed record WaveformCacheData(float[] Peaks, int PeakChannels, float[] RmsLevels);
 }
