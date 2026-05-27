@@ -2,8 +2,7 @@
 
 Minimal native Windows audio player prototype inspired by waveform-first players.
 
-<img width="70%" alt="image" src="https://github.com/user-attachments/assets/fbc18d8b-a894-4081-89ce-f100d56fabcd" />
-
+<img  width="70%" alt="image" src="https://github.com/user-attachments/assets/0782a678-d780-4b49-b83d-8d98300a31a4" />
 
 ## Features
 
