@@ -64,7 +64,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<FolderNode> FolderNodes { get; } = [];
     public ObservableCollection<AudioFileItem> BrowserFiles { get; } = [];
 
-    public MainWindow()
+    public MainWindow(string? startupFilePath = null)
     {
         InitializeComponent();
         DataContext = this;
@@ -76,6 +76,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Activated += (_, _) => UpdateTaskbarPlaybackState();
         Deactivated += (_, _) => UpdateTaskbarPlaybackState();
         Loaded += (_, _) => Dispatcher.BeginInvoke(UpdateBrowserRowLimit, DispatcherPriority.Loaded);
+        if (!string.IsNullOrWhiteSpace(startupFilePath))
+        {
+            Loaded += async (_, _) => await LoadFileAsync(startupFilePath);
+        }
+
         SizeChanged += (_, _) => Dispatcher.BeginInvoke(UpdateBrowserRowLimit, DispatcherPriority.Render);
     }
 
