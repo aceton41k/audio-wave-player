@@ -2,6 +2,9 @@
 
 Minimal native Windows audio player prototype inspired by waveform-first players.
 
+<img width="70%" alt="image" src="https://github.com/user-attachments/assets/fbc18d8b-a894-4081-89ce-f100d56fabcd" />
+
+
 ## Features
 
 - Native WPF UI for Windows.
