@@ -1,0 +1,9 @@
+# Project Context
+
+- The active app is a native Win32 C++ player in `src/main.cpp`, built by `AudioWave.Player.vcxproj` rather than the older C# files still reflected in git history.
+- The file browser uses a Win32 `ListView` plus custom painting in `DrawFileListControl`; column count changes need updates in column creation, sizing, header hit testing, `RebuildFileListItems`, sort enum/comparison, and manual row drawing.
+- Build workflow: stop any `AudioWave.Player.exe` from `C:\Users\ac\Documents\audio_player\x64\Debug`, then run Visual Studio 18 Insiders MSBuild from the repository root with `Configuration=Debug` and `Platform=x64`.
+- 2026-06-10: Added file-list track length after the name column. Durations are read from Media Foundation `MF_PD_DURATION` via a lightweight `IMFSourceReader`, displayed as `m:ss` or `h:mm:ss`, and sortable by the new `Length` column.
+- 2026-06-10: Waveform analysis results are cached in memory per normalized file path for the current `AudioWaveApp` session; `LoadFile` reuses cached `WaveformData` instead of starting `BuildWaveform` again. Peak density target is `kWaveformPeakTarget = 3000`.
+- 2026-06-10: Seek UI should trust `playbackPosition_` immediately after waveform/keyboard seek and avoid forcing an instant `player_->Position()` query, because Media Foundation can briefly report the start/old clock position right after `StartAt`. Clicking the waveform while paused should seek and start playback via `StartPlayback()`.
+- 2026-06-10: Seek click suppression uses `MediaPlayerHost::fadeScale_` as a transient multiplier over the user's `volume_`. Playing seeks should not call `StartAt` immediately; they enter a `SeekFadePhase::FadingOut` state, ramp down over `kSeekFadeOutMs`, perform the pending seek while muted, then ramp in over `kSeekFadeInMs`. Paused waveform clicks still seek first and start with `StartPlayback(true)`.

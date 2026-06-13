@@ -1,51 +1,37 @@
 # AudioWave Player
 
-Minimal native Windows audio player prototype inspired by waveform-first players.
-
-<img  width="70%" alt="image" src="https://github.com/user-attachments/assets/0782a678-d780-4b49-b83d-8d98300a31a4" />
+Native Windows audio player built with C++20, Win32, GDI+ and Media Foundation.
 
 ## Features
 
-- Native WPF UI for Windows.
-- Portable-friendly layout.
-- Large seekable waveform.
-- Playback controls: open, play/pause, stop, restart, volume.
+- Pure Win32 desktop UI.
+- Media Foundation playback for WAV, MP3, M4A/MP4, AAC, WMA and FLAC when the installed Windows codecs support them.
+- Seekable waveform generated through `IMFSourceReader`.
+- Playback controls: open, previous, play/pause, stop, next, restart, volume and mute.
+- Sequential, repeat-one and shuffle playback.
 - Dark and light themes.
-- Format line with sample rate, channels, lossless/lossy hint, approximate bitrate, extension.
-- Input formats through FFmpeg: WAV, MP3, M4A, FLAC.
+- Drag-and-drop file opening.
+- Folder audio list based on the currently opened file.
+- Live RMS meters.
 
 ## Requirements
 
-- .NET 8 SDK for development.
-- `ffmpeg.exe` for decoding.
+- Windows 10 or newer.
+- Visual Studio 2022 with the Desktop development with C++ workload.
+- Windows 10/11 SDK.
 
-For portable use, put FFmpeg here after publishing:
+No .NET runtime, NAudio package or FFmpeg executable is required.
 
-```text
-AudioWavePlayer.exe
-ffmpeg/
-  ffmpeg.exe
-```
+## Build
 
-The app also searches for `ffmpeg.exe` next to the executable and in `PATH`.
-Decoded waveform/playback cache is stored in `cache/decoded` near the executable when that folder is writable, with `%LOCALAPPDATA%/AudioWavePlayer` as a fallback.
+Open `AudioWave.Player.sln` in Visual Studio and build `Release|x64`.
 
-## Development
+Command line from a Visual Studio Developer PowerShell:
 
 ```powershell
-dotnet restore
-dotnet build
-dotnet run
+msbuild .\AudioWave.Player.sln /p:Configuration=Release /p:Platform=x64
 ```
 
-## Portable Publish
+## Notes
 
-```powershell
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-```
-
-Copy `ffmpeg/ffmpeg.exe` into the publish directory.
-
-## License Notes
-
-The app code is intended for an open source repository. `NAudio` is MIT licensed. FFmpeg licensing depends on the distributed build and enabled codecs, so choose an FFmpeg build whose license terms match the project distribution model.
+Media Foundation support depends on codecs installed with Windows. Unsupported or DRM-protected files will fail to open instead of being transcoded by FFmpeg.
